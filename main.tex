@@ -10,6 +10,7 @@
 \usepackage{array}
 \usepackage{url}
 \usepackage{hyperref}
+\usepackage{multirow}
 
 \hypersetup{
     colorlinks=true,
@@ -23,7 +24,8 @@
 
 \begin{document}
 
-\title{Enterprise VPN Technologies: A Comparative Survey of GRE, MPLS, and IPSec Solutions}
+\title{Beyond the Perimeter: A Survey of Enterprise VPN Technologies\\
+and a Proposed Quantum-Resilient Adaptive Zero Trust Architecture}
 
 \author{
     \IEEEauthorblockN{[Author 1 Name]}
@@ -47,524 +49,832 @@
 
 \maketitle
 
-% ---------------------------------------------------------------
 \begin{abstract}
-Virtual Private Networks (VPNs) have become a foundational component
-of enterprise communication infrastructure, providing secure and
-reliable connectivity across geographically distributed sites. This
-paper presents a comprehensive literature review of three widely
-deployed enterprise VPN technologies: Generic Routing Encapsulation
-(GRE), Multi-Protocol Label Switching (MPLS), and Internet Protocol
-Security (IPSec). We examine the architectural principles, security
-properties, and deployment characteristics of each technology, along
-with hybrid combinations such as GRE over IPSec. By analyzing recent
-research and practical implementations, we identify the strengths and
-limitations of each approach and provide a comparative discussion to
-guide enterprises in selecting the most appropriate VPN solution for
-their specific requirements. The findings suggest that no single
-technology is universally superior; rather, the choice depends on
-factors including security requirements, scalability needs, quality
-of service demands, and cost constraints.
+Enterprise VPN security is at a turning point. The technologies
+that have underpinned corporate network access for the past two
+decades --- GRE tunneling, IPSec encryption, and MPLS switching
+--- were not designed for a world of cloud-native workloads,
+ubiquitous remote work, and quantum-capable adversaries. This
+paper does two things. First, we survey six enterprise
+connectivity paradigms (GRE, IPSec, WireGuard, MPLS L3VPN,
+SD-WAN, and ZTNA) with a focus on the threat dimensions most
+relevant today: lateral movement risk, quantum vulnerability,
+and performance overhead. Rather than treating these as
+equivalent considerations, we argue that quantum key exposure
+and post-authentication lateral movement now represent the two
+defining security failures of the traditional VPN model --- a
+claim we support through a structured threat-surface taxonomy
+and performance data drawn from recent peer-reviewed studies.
+Second, we propose a conceptual integration framework, the
+\textit{Quantum-Resilient Adaptive Zero Trust Architecture}
+(QRA-ZTA), that layers post-quantum cryptographic key exchange
+(NIST FIPS-203 ML-KEM), eBPF-accelerated policy enforcement,
+zero trust continuous verification (per NIST SP~800-207), and
+AI-driven traffic anomaly detection into a coherent architecture
+that can be deployed atop existing enterprise transport
+infrastructure. The goal is not to replace what organizations
+have built but to give those investments the security properties
+they were never designed to have.
 \end{abstract}
 
 \begin{IEEEkeywords}
-VPN, GRE, IPSec, MPLS, enterprise network, tunneling, network security, L3VPN
+VPN, GRE, IPSec, WireGuard, MPLS, SD-WAN, ZTNA, zero trust,
+post-quantum cryptography, ML-KEM, eBPF, encrypted traffic
+anomaly detection, HNDL attacks, enterprise network security,
+QRA-ZTA
 \end{IEEEkeywords}
 
 % ---------------------------------------------------------------
 \section{Introduction}
 
-In the modern enterprise environment, organizations are no longer
-confined to a single physical location. Branch offices, remote
-workers, and partner organizations span cities, countries, and even
-continents. This geographic dispersion creates a fundamental
-challenge: how do we connect these sites securely and efficiently
-over public network infrastructure, without exposing sensitive data
-to unauthorized parties?
+There is a particular irony in how enterprise VPN security
+actually works in practice. The whole effort --- the cryptographic
+handshake, the key exchange, the mutual authentication --- goes
+into getting a device through the tunnel. Once it is through,
+that device is on the network. It can reach servers, databases,
+shared drives. The implicit assumption is that anything inside
+the tunnel belongs there. This is the castle-and-moat model, and
+it has been the foundational logic of enterprise network security
+for thirty years.
 
-Virtual Private Networks offer a practical answer to this challenge.
-A VPN uses a shared or public infrastructure, such as the Internet,
-to create a private communication channel that mimics the behavior
-of a dedicated physical network~\cite{rosu2012}. From the perspective
-of the end user, traffic appears to flow through a private pipe, even
-though it physically travels through shared infrastructure. VPNs
-provide the confidentiality, integrity, and availability properties
-that enterprise operations demand.
+The problem is that attackers understand this model better than
+most defenders do. Compromising a single VPN credential, whether
+through phishing, password spraying, or exploiting an unpatched
+gateway vulnerability, grants the kind of broad internal
+reachability that turns a single foothold into a domain-wide
+breach. The Cybersecurity Insiders 2024 VPN Risk Report found
+that 56\% of enterprises had experienced at least one cyberattack
+in the preceding year that exploited a VPN vulnerability
+directly~\cite{cybersec2024}. Ransomware operators have made
+VPN gateways their preferred initial access vector precisely
+because of this dynamic.
 
-Three technologies dominate enterprise VPN deployments today. The
-first is Generic Routing Encapsulation (GRE), a tunneling protocol
-defined in RFC~2784~\cite{rfc2784} that encapsulates one network
-protocol inside another. GRE is lightweight and flexible but
-provides no native encryption. The second is IPSec, a comprehensive
-security framework defined in RFC~4301~\cite{rfc4301} that provides
-authentication and encryption at the network layer. IPSec is the de
-facto standard for securing VPN traffic over the Internet. The third
-is MPLS, defined in RFC~3031~\cite{rfc3031}, a high-performance
-packet forwarding mechanism that enables service providers to deliver
-scalable, multi-tenant VPN services with strong traffic isolation
-and Quality of Service (QoS) guarantees.
+A second threat is accumulating more quietly. State-sponsored
+actors are conducting what the intelligence community calls
+``Harvest Now, Decrypt Later'' (HNDL) attacks: intercepting and
+storing encrypted VPN traffic today, with the intention of
+decrypting it once quantum computers become capable enough.
+The key exchange algorithms that secure every mainstream VPN
+--- Diffie-Hellman in IPSec, Curve25519 in WireGuard, ECDH in
+TLS-based solutions --- are all solvable in polynomial time by
+Shor's algorithm on a sufficiently large quantum machine. The
+timeline for when such machines might exist is genuinely
+uncertain, but the intelligence community estimates the window
+at ten to fifteen years~\cite{nist_fips203}. The traffic being
+collected right now will still be sensitive then. This is not a
+hypothetical future problem; the collection is happening today.
 
-Each technology has found a distinct place in enterprise networking.
-GRE is commonly used for its simplicity and routing flexibility.
-IPSec is deployed wherever strong encryption is required. MPLS is
-the preferred solution for service providers and large enterprises
-that need scalability and traffic engineering. In many real-world
-deployments, these technologies are combined --- most notably in the
-form of GRE over IPSec --- to leverage the strengths of more than
-one approach simultaneously.
+Against this backdrop, this paper argues that the incremental
+hardening of legacy VPN stacks is no longer sufficient as a
+security strategy. What is needed instead is a clear-eyed
+assessment of what each VPN technology actually provides and
+where it structurally fails, followed by a composable
+architecture that addresses those failures without requiring
+enterprises to abandon the infrastructure they have built.
 
-This paper surveys the literature on all three technologies and their
-combinations. The goal is to provide a clear, structured understanding
-of how each technology works, what it is good for, and where it falls
-short. The rest of the paper is organized in such a way that
-Section~\ref{sec:relatedwork} discusses related work found in the
-literature, followed by a discussion in Section~\ref{sec:discussion}
-and the paper is concluded in Section~\ref{sec:conclusion}.
-
-% ---------------------------------------------------------------
-\section{Background}
-
-Before reviewing specific technologies, it is useful to briefly
-establish the general VPN taxonomy that the literature commonly uses.
-VPNs can be classified along several dimensions. By responsibility,
-they are either customer-provisioned (the customer manages the VPN
-endpoints) or provider-provisioned (the service provider manages the
-VPN infrastructure)~\cite{akinsanya2024}. By layer of operation, they
-are either Layer-2 VPNs, which operate at the data-link layer and
-present a virtual switch to the customer, or Layer-3 VPNs, which
-operate at the network layer and involve the service provider in IP
-routing~\cite{fayed2024}. By access model, they are either
-site-to-site VPNs, which connect fixed locations, or remote access
-VPNs, which serve mobile and home users~\cite{rosu2012}.
-
-The three technologies covered in this paper map to different
-positions in this taxonomy. GRE is a customer-side tunneling
-mechanism that operates at Layer-3. IPSec is a security framework
-that operates at Layer-3 and is used in both customer and provider
-deployments. MPLS is primarily a provider-side technology that
-supports both Layer-2 and Layer-3 VPNs at significant scale.
+We organize this argument in four parts. Section~\ref{sec:background}
+establishes a taxonomy of the six paradigms we examine. The
+survey in Section~\ref{sec:relatedwork} covers each technology
+in enough depth to expose its specific threat surface.
+Section~\ref{sec:threatscape} consolidates that analysis into
+a structured gap assessment, including quantitative performance
+data. Section~\ref{sec:framework} then proposes the QRA-ZTA
+framework as a response to those gaps.
 
 % ---------------------------------------------------------------
-\section{Related Work}
-\label{sec:relatedwork}
+\section{Organizing the Landscape: A Three-Dimension Taxonomy}
+\label{sec:background}
 
-\subsection{Tunnel-Based VPN Technologies}
-
-\subsubsection{Generic Routing Encapsulation (GRE)}
-
-GRE is one of the oldest and most widely used tunneling protocols
-in enterprise networking. It was standardized by Cisco and later
-published by the IETF in RFC~2784~\cite{rfc2784}. The fundamental
-idea behind GRE is simple: a packet of one protocol, such as IPv6,
-is encapsulated inside a GRE header and then placed inside an outer
-IPv4 packet for delivery across a network that would not otherwise
-support the inner protocol. At the receiving end, the outer header
-and GRE header are removed and the original packet is forwarded
-normally.
-
-GRE tunnels are stateless, meaning the tunnel itself does not
-maintain session information. This makes GRE lightweight and easy
-to configure. A common real-world use case, demonstrated in the
-work of Fahriza et al.~\cite{fahriza2026}, is IPv6-over-IPv4
-tunneling, where an organization needs to deploy IPv6 across
-branches but the WAN infrastructure only supports IPv4. GRE handles
-this encapsulation cleanly and enables OSPF routing to run
-end-to-end across the tunnel, ensuring efficient convergence.
-
-However, GRE has one significant limitation: it provides no
-encryption and no authentication on its own. A GRE tunnel passes
-traffic as plaintext, meaning any attacker who can observe traffic
-on the underlying network can read the contents of the tunnel. GRE
-was never intended as a security mechanism; it is a routing and
-encapsulation tool.
-
-Uddin et al.~\cite{uddin2021} conducted an analysis of GRE over
-IPv6 networks and confirmed that while GRE provides the routing
-flexibility needed to connect heterogeneous networks, the absence
-of native security makes it unsuitable as a standalone enterprise
-VPN solution where data confidentiality is required. Their work
-reinforces the view that GRE is best understood as a building block
-to be combined with security protocols, rather than a complete VPN
-solution in itself.
-
-Ogudo~\cite{ogudo2019} examined GRE and IPSec tunneling protocols
-specifically for secure communication over public networks and
-concluded that GRE alone is appropriate only in trusted or
-internally controlled environments. For public Internet traversal,
-the combination of GRE with IPSec is necessary.
-
-\subsubsection{IPSec Protocol Suite}
-
-IPSec is a comprehensive framework defined across multiple RFCs,
-with the architecture specified in RFC~4301~\cite{rfc4301}. Unlike
-GRE, IPSec was designed from the ground up as a security solution.
-It operates at the IP layer and is transparent to applications
-above it, which means no application modification is required for
-IPSec to protect traffic.
-
-IPSec provides three core security services. The first is
-confidentiality, achieved through encryption using algorithms such
-as AES. The second is data integrity, achieved through keyed hash
-functions that verify packets have not been tampered with in
-transit. The third is authentication, which verifies the identity
-of communicating parties. These services are delivered through two
-protocols: the Authentication Header (AH), which provides integrity
-and authentication but does not encrypt the payload, and the
-Encapsulating Security Payload (ESP), which provides all three
-services including confidentiality, making it the more commonly
-deployed option in practice.
-
-IPSec operates in two modes. In transport mode, only the payload
-of the IP packet is protected and the original IP header is
-preserved. In tunnel mode, the entire original IP packet is
-encapsulated inside a new IP packet and fully protected. Tunnel
-mode is the standard choice for gateway-to-gateway VPNs, where
-the VPN endpoints are different from the actual source and
-destination hosts~\cite{rosu2012}.
-
-Key management in IPSec is handled by the Internet Key Exchange
-(IKE) protocol. IKE version 1 was widely deployed but has known
-vulnerabilities. IKEv2 resolves these issues and offers improved
-authentication and negotiation efficiency. Most modern deployments
-use IKEv2.
-
-Nair~\cite{nair2024} provided a detailed examination of IPSec
-integration for data security and concluded that IPSec with ESP in
-tunnel mode is the most robust option for enterprise site-to-site
-VPNs. The combination of AES-256 for encryption and SHA-256 for
-integrity provides strong protection against both passive
-eavesdropping and active tampering attacks.
-
-Rosu et al.~\cite{rosu2012} studied a large geographically
-dispersed enterprise and implemented an IPSec-based VPN architecture
-connecting a headquarters in Bucharest with hundreds of branch
-offices across Romania. Their implementation used IPSec tunnel mode
-with DES and 3DES encryption deployed on Cisco routers. The authors
-found that IPSec met the confidentiality and integrity requirements
-of the organization and integrated cleanly with the existing routing
-infrastructure. The deployment also demonstrated that open-source
-network monitoring tools like Nagios can effectively manage the
-health of large-scale IPSec VPN networks.
-
-Sankaran~\cite{sankaran2023} examined cross-protocol attacks on
-IPSec-based VPNs and identified several attack vectors including
-IKEv1 downgrade attacks and traffic analysis. This work highlights
-that while the IPSec cryptographic core is strong, the overall
-security depends on careful configuration, particularly in the
-choice of IKE version and cipher suites. The author recommends
-mandatory use of IKEv2 and avoidance of legacy cipher suites such
-as 3DES in any new deployment.
-
-\subsubsection{GRE over IPSec (Hybrid Approach)}
-
-Because GRE lacks security and IPSec lacks routing flexibility,
-combining the two has become a standard practice in enterprise
-networking. In a GRE-over-IPSec configuration, a GRE tunnel is
-first established between two routers, and then IPSec is applied
-to encrypt all traffic flowing through that tunnel. The result is
-a tunnel that supports dynamic routing protocols like OSPF and
-EIGRP --- which cannot run directly over a raw IPSec tunnel ---
-while also providing full encryption of all encapsulated traffic.
-
-Fahriza et al.~\cite{fahriza2026} implemented exactly this
-architecture for a private network simulation in Indonesia. Their
-topology consisted of three regional branch offices connected
-through GRE tunnels with IPSec encryption, using OSPF for routing
-and ISAKMP for IPSec key management. Network performance was
-evaluated by measuring QoS metrics including delay, jitter, and
-throughput. The simulation results showed that the GRE-IPSec
-combination successfully established secure connections between
-all branch sites, and network quality remained acceptable even
-when tunneling was active. The authors also conducted a
-techno-economic analysis and found the implementation financially
-viable, with an Internal Rate of Return of 84.80\% and a payback
-period of approximately 11 months.
-
-Kumar et al.~\cite{kumar2020} also studied IPSec with encapsulation
-and found that the combination of GRE and IPSec, when properly
-configured, provides an effective balance between routing
-functionality and security. Their work specifically examined how
-multicast and broadcast traffic, which IPSec cannot carry
-directly, can be supported through GRE encapsulation before
-IPSec encryption.
-
-The main tradeoff in GRE-over-IPSec is overhead. Each packet
-carries both a GRE header (4 bytes minimum) and IPSec headers.
-This additional overhead reduces the effective MTU of the tunnel
-and increases CPU load on the router. For environments with high
-throughput requirements or latency-sensitive applications, this
-overhead must be accounted for in capacity planning.
-
-\subsection{Provider-Managed VPN Technologies: MPLS}
-
-\subsubsection{MPLS Architecture and Core Concepts}
-
-Multi-Protocol Label Switching was developed by the IETF to address
-the limitations of traditional hop-by-hop IP routing. MPLS is
-defined in RFC~3031~\cite{rfc3031} and introduces a 32-bit label
-inserted between the Layer-2 header and the Layer-3 IP header.
-Routers in an MPLS domain --- called Label Switching Routers (LSRs)
---- forward packets based on this label rather than performing a
-full IP routing table lookup at each hop. This label-based
-forwarding is faster and more predictable than conventional IP
-routing.
-
-The MPLS label structure consists of a 20-bit label value, 3~bits
-for experimental (EXP) use, 1~bit for bottom-of-stack indication,
-and 8~bits for Time-to-Live (TTL). Labels are assigned and
-distributed among routers using the Label Distribution Protocol
-(LDP) or the Resource Reservation Protocol with Traffic Engineering
-extensions (RSVP-TE).
-
-At the edges of the MPLS domain, Provider Edge (PE) routers
-receive traffic from Customer Edge (CE) routers and assign labels
-before forwarding into the MPLS core. Provider (P) routers in the
-core only perform label switching and have no knowledge of customer
-VPN information. At the far edge, the receiving PE router removes
-the label and delivers traffic to the destination CE router. This
-penultimate hop popping mechanism, where the label is removed one
-hop before the destination, further reduces forwarding overhead.
-
-Mungse~\cite{mungse2023} provides a detailed examination of this
-architecture, including the role of Virtual Routing and Forwarding
-(VRF) tables in maintaining traffic isolation between different
-customers. Each VRF on a PE router acts as a completely separate
-routing table for a specific customer VPN. This isolation ensures
-that routes and traffic from one customer are never visible to
-another, even though both share the same physical infrastructure.
-
-\subsubsection{Layer-2 MPLS VPNs}
-
-Layer-2 MPLS VPNs present the service provider network as a virtual
-switch to the customer. The customer sees nothing but Layer-2
-circuits between their sites, and the provider handles all internal
-routing and label switching. Two main variants exist. Virtual
-Private Wire Service (VPWS) provides point-to-point Layer-2
-circuits. Virtual Private LAN Service (VPLS) provides a
-multi-point Layer-2 service that appears to the customer as a
-single, shared LAN switch.
-
-Fayed et al.~\cite{fayed2024} note that in a Layer-2 VPN, the
-service provider network is transparent to the customer at Layer-3.
-This means the customer is fully responsible for their own IP
-addressing and routing, and point-to-point addresses must be
-allocated at both customer sites from the same subnet. While this
-simplicity gives customers full routing control, it also means that
-the provider cannot optimize traffic paths based on Layer-3
-information, which can limit efficiency in complex topologies.
-
-\subsubsection{Layer-3 MPLS VPNs (BGP/MPLS VPNs)}
-
-Layer-3 MPLS VPNs, defined in RFC~4364~\cite{rfc4364}, are the
-most widely deployed MPLS VPN type in enterprise and carrier
-environments. In an L3VPN, the service provider participates
-directly in the customer's routing by maintaining separate VRF
-instances for each customer on the PE routers. BGP with
-Multiprotocol extensions (MP-BGP) distributes VPN routing
-information between PE routers.
-
-Two key concepts make L3VPNs function correctly. The first is the
-Route Distinguisher (RD), a 64-bit value prepended to each customer
-route that makes it globally unique, even if multiple customers use
-overlapping IP address spaces. The second is the Route Target (RT),
-a BGP community attribute that controls which routes are exported
-from and imported into each VRF. By carefully configuring RTs,
-service providers can implement complex connectivity models such as
-full mesh, hub-and-spoke, and overlapping VPNs.
-
-Mungse~\cite{mungse2023} implemented a complete L3VPN in GNS3 with
-PE, P, and CE routers. The implementation demonstrated VRF-based
-traffic isolation, BGP route distribution, and multi-site
-reachability. Ping and traceroute tests confirmed that Site~A
-traffic reached all designated Site~B destinations while remaining
-completely isolated from other customers' traffic. Wireshark
-captures confirmed BGP UPDATE messages carrying VPN route
-information between PE routers.
-
-Fayed et al.~\cite{fayed2024} extended this work to examine more
-complex MPLS VPN scenarios. They implemented and validated three
-advanced models on a live network emulation using GNS3 with Cisco
-IOU software. The first was the simple VPN, where each customer's
-sites communicate only among themselves. The second was the
-overlapping VPN, where customer Headquarters sites communicate
-with each other across VPN boundaries while branch sites remain
-isolated. This is achieved by assigning additional Route Targets
-to the HQ PE routers, enabling controlled route leaking between
-otherwise separate VPNs. The third was the central services VPN,
-where a shared server farm is accessible to all customers through
-their individual VPNs while customers remain isolated from each
-other. All three models were validated by inspecting BGP routing
-tables of customer routers and confirming expected route presence
-and absence.
-
-The central services model is particularly relevant for enterprise
-deployments, as it allows a shared security infrastructure, Active
-Directory, or DNS service to serve multiple customer segments
-without requiring those segments to communicate directly with
-each other.
-
-Huda and Andriyani~\cite{huda2025} further demonstrated how GRE
-tunnels can be used in conjunction with OSPF multi-area designs,
-showing that GRE and MPLS need not be viewed as competing
-technologies but can complement each other in hybrid WAN
-architectures.
-
-% ---------------------------------------------------------------
-\section{Discussion}
-\label{sec:discussion}
-
-\subsection{Security Comparison}
-
-The three technologies differ fundamentally in their approach to
-security. IPSec provides the strongest built-in security, offering
-encryption, integrity verification, and mutual authentication in
-a single framework. GRE alone provides no security whatsoever.
-MPLS VPNs rely on traffic isolation rather than encryption;
-customer traffic is segregated at the routing layer through VRF
-tables and label switching, but the traffic itself is not
-encrypted in transit.
-
-This distinction matters in practice. An MPLS VPN deployed over a
-service provider's managed infrastructure is generally considered
-secure because the provider controls the core network and prevents
-unauthorized access. However, MPLS VPN traffic running over a
-shared or untrusted backbone provides no protection for the data.
-In such scenarios, IPSec must be added as an overlay to provide
-encryption~\cite{fayed2024}. For organizations that must comply with
-data protection regulations, IPSec or GRE-over-IPSec is the
-appropriate choice, as it provides end-to-end encryption
-regardless of the underlying transport.
-
-\subsection{Scalability and Management}
-
-MPLS VPNs have the strongest scalability story of the three
-technologies. The VRF-based architecture separates customer routing
-tables at PE routers, meaning P routers in the core carry no
-VPN-specific state. Adding a new customer VPN requires configuration
-only at the edge. This property allows service providers to support
-thousands of enterprise customers on the same physical
-infrastructure without increasing the complexity of the
-core~\cite{mungse2023}.
-
-GRE tunnels do not scale well in full-mesh deployments. If an
-enterprise has $N$ sites and each must reach all others, $N(N-1)/2$
-tunnel pairs must be configured. For even moderately sized networks
-this becomes administratively burdensome. IPSec suffers from
-similar scaling limitations, as each tunnel requires its own
-Security Association (SA). MPLS also excels in supporting complex
-connectivity models through the RT/RD mechanism, which allows
-fine-grained control over site reachability --- including overlapping
-and central services models --- with no equivalent in GRE or
-IPSec~\cite{fayed2024}.
-
-\subsection{Quality of Service}
-
-MPLS supports QoS through the EXP bits in the label header, which
-mark different traffic classes for differential treatment within
-the provider network. This allows a service provider to guarantee
-bandwidth, delay, and jitter for specific traffic classes, critical
-for voice and video applications. Service Level Agreements for
-delay-sensitive traffic are routinely backed by MPLS traffic
-engineering in carrier networks~\cite{fayed2024}.
-
-GRE and IPSec do not inherently support QoS. When traffic is
-encapsulated in a GRE or IPSec tunnel, inner DSCP markings may or
-may not be preserved in the outer header, depending on
-configuration. In practice, QoS over GRE-IPSec tunnels requires
-careful end-to-end planning and is much harder to guarantee than
-in a managed MPLS environment.
-
-\subsection{Cost and Deployment Context}
-
-GRE and IPSec are software-based features available on virtually
-all modern enterprise routers and firewalls, often at no
-additional cost. They can be deployed quickly over any IP network,
-including commodity Internet connections. For small to medium
-enterprises with limited budgets, GRE-over-IPSec over broadband
-Internet is a very cost-effective VPN solution.
-
-MPLS VPNs typically require a service provider subscription.
-However, for large enterprises with stringent SLA requirements,
-the cost is often justified by the reliability, QoS guarantees,
-and reduced management overhead. Fahriza et al.~\cite{fahriza2026}
-demonstrated through detailed financial modeling that even a
-self-managed GRE-IPSec deployment can be economically favorable,
-showing a positive Net Present Value, an IRR of 84.80\%, and
-a payback period of under one year for a three-branch Indonesian
-enterprise.
-
-\subsection{Summary Comparison}
-
-Table~\ref{tab:comparison} summarizes the key differences across
-the four configurations discussed in this paper.
+Before comparing technologies, it helps to agree on what we are
+comparing them on. Prior surveys of enterprise VPN have typically
+organized technologies by operational layer (L2 vs.\ L3) or
+management model (customer-managed vs.\ provider-managed). We
+retain both of those dimensions but add a third: trust model.
+This distinguishes between perimeter-based architectures, where
+trust is established once at connection time and implicitly
+extended throughout the session, and zero-trust architectures,
+where every access request is evaluated independently regardless
+of how the user got onto the network~\cite{nist800207}.
 
 \begin{table}[htbp]
-\caption{Comparative Summary of Enterprise VPN Technologies}
-\label{tab:comparison}
+\caption{Taxonomy of Enterprise Connectivity Paradigms}
+\label{tab:taxonomy}
 \centering
 \renewcommand{\arraystretch}{1.2}
-\begin{tabular}{lcccc}
+\begin{tabular}{lccc}
 \toprule
-\textbf{Criterion} & \textbf{GRE} & \textbf{IPSec} & \textbf{GRE/IPSec} & \textbf{MPLS L3VPN} \\
+\textbf{Technology} & \textbf{Management} & \textbf{Layer} & \textbf{Trust Model} \\
 \midrule
-Encryption        & None    & Strong  & Strong  & None$^{*}$  \\
-Authentication    & None    & Strong  & Strong  & Implicit    \\
-Routing Support   & Full    & Limited & Full    & Full (BGP)  \\
-QoS Support       & Basic   & Basic   & Basic   & Native      \\
-Scalability       & Low     & Low     & Low     & High        \\
-Configuration     & Low     & Medium  & Medium  & High        \\
-Cost              & Low     & Low     & Low     & High        \\
-Multicast         & Yes     & No      & Yes     & Yes         \\
-Deployment Side   & Customer& Customer& Customer& Provider    \\
+GRE         & Customer  & L3      & Perimeter \\
+IPSec       & Customer  & L3      & Perimeter \\
+WireGuard   & Customer  & L3      & Perimeter \\
+MPLS L3VPN  & Provider  & L3      & Perimeter \\
+SD-WAN      & Hybrid    & L3      & Perimeter/Hybrid \\
+ZTNA        & Cloud     & App     & Zero Trust \\
 \bottomrule
-\multicolumn{5}{l}{$^{*}$MPLS provides traffic isolation, not encryption.}
 \end{tabular}
 \end{table}
 
-The table shows that no single technology dominates across all
-criteria. GRE-over-IPSec is the most practical choice for
-enterprises that manage their own WAN connectivity over the
-Internet. MPLS L3VPN is the preferred choice for enterprises that
-require carrier-grade QoS, scalability, and complex connectivity
-models, and are willing to pay for a managed service. Organizations
-with very high security requirements may choose to run IPSec over
-their MPLS circuits as an additional protection layer against
-insider threats at the service provider.
+The trust model dimension is why this taxonomy matters more than
+a simple feature comparison. The first five technologies in
+Table~\ref{tab:taxonomy} all share perimeter-based trust, which
+means they share the same structural vulnerability to lateral
+movement after credential compromise. ZTNA breaks from this
+model but, as we will argue, introduces its own gaps --- notably
+the absence of quantum-resistant key exchange and the limitation
+of not providing site-to-site transport. The QRA-ZTA framework
+in Section~\ref{sec:framework} is designed to fill the
+intersection of those gaps.
+
+% ---------------------------------------------------------------
+\section{Survey of Enterprise VPN Technologies}
+\label{sec:relatedwork}
+
+\subsection{GRE: Flexible but Fundamentally Insecure}
+
+GRE, standardized in RFC~2784~\cite{rfc2784}, encapsulates one
+network layer protocol inside another. In practice this means
+you can carry IPv6 over an IPv4 backbone, run multicast across
+a unicast WAN, or maintain OSPF adjacencies between routers
+that have no direct Layer-2 connection. Fahriza et
+al.~\cite{fahriza2026} document a three-branch enterprise
+deployment using GRE for IPv6-over-IPv4 tunneling with OSPF
+routing, and Huda and Andriyani~\cite{huda2025} examine GRE's
+integration with OSPF multi-area configurations. Both confirm
+GRE's practical value as a routing and encapsulation primitive.
+
+What GRE does not do is provide any security. There is no
+encryption, no authentication, and no replay protection. Uddin
+et al.~\cite{uddin2021} are direct about this: GRE alone is
+unsuitable for any environment where data confidentiality
+matters. Ogudo~\cite{ogudo2019} reaches the same conclusion,
+noting that GRE over a public network without an overlaid
+security protocol creates a completely open interception surface.
+GRE belongs in the toolkit as a routing mechanism, not a
+security one.
+
+\subsection{IPSec: The Enterprise Standard, and Its Problems}
+
+IPSec (RFC~4301~\cite{rfc4301}) is the closest thing enterprise
+networking has to a universal standard for encrypted tunnels.
+It provides confidentiality through ESP, integrity through keyed
+hashes, and mutual authentication through IKE. Deployed in
+tunnel mode with ESP, it encrypts the entire original IP packet
+inside a new outer envelope. Nair~\cite{nair2024} identifies
+IKEv2 with AES-256-GCM as the correct configuration for new
+deployments, and Rosu et al.~\cite{rosu2012} validate IPSec at
+enterprise scale in a large Romanian corporate network.
+
+The operational vulnerabilities are real and well-studied.
+Sankaran~\cite{sankaran2023} documents IKEv1 downgrade attacks,
+exploitable cipher negotiations, and SA exhaustion as active
+threats against deployed IPSec configurations. IKEv1 should be
+considered deprecated at this point. More fundamentally, IPSec's
+key exchange relies on the discrete logarithm problem, which
+Shor's algorithm solves efficiently on a quantum
+machine~\cite{nist_fips203}. This is not an academic concern.
+Every enterprise running IPSec today is generating traffic that
+HNDL attackers may already be collecting.
+
+There is also the operational complexity problem. The IKE
+negotiation stack is large, the configuration options are
+numerous, and misconfiguration is common. The connection model
+requires active state management, which means mobile users who
+roam between networks frequently drop and re-establish tunnels.
+These are not disqualifying limitations, but they are real costs.
+
+\subsection{WireGuard: A Better Mousetrap}
+
+WireGuard~\cite{donenfeld2017} was designed as an explicit
+rejection of IPSec's complexity. Where IPSec negotiates
+cryptographic algorithms, WireGuard picks one suite and uses
+it: Curve25519 for key agreement, ChaCha20-Poly1305 for
+authenticated encryption, and BLAKE2s for hashing. There is
+nothing to negotiate and therefore nothing to downgrade.
+Dowling and Paterson~\cite{dowling2018} formally verified the
+WireGuard handshake using the eCK security model and confirmed
+it achieves forward secrecy and resistance to key compromise
+impersonation --- properties that IPSec configurations often
+get wrong through misconfiguration.
+
+The codebase is roughly 4,000 lines~\cite{calmops2026}, a
+fraction of OpenVPN's 600,000-plus lines. A smaller codebase
+is not just an aesthetic preference; it is a measurable reduction
+in attack surface and a practical prerequisite for formal
+verification. Performance reflects the design: independent
+benchmarks show WireGuard at 92--95\% of native bare-metal
+bandwidth, compared to 85--90\% for IKEv2/IPSec in comparable
+software deployments, with latency overhead of 1--3~ms versus
+10--15~ms~\cite{zhuque2026,zenarmor2023}. Tanveer and
+Ashfaq~\cite{tanveer2023} identify it as the strongest
+candidate for modern software-based VPN from a combined security
+and performance standpoint.
+
+The qualification is important: WireGuard's Curve25519 key
+exchange is just as quantum-vulnerable as IPSec's DH groups.
+This is WireGuard's most significant unresolved problem for
+any organization thinking beyond the next five years.
+
+\subsection{GRE over IPSec: A Necessary Compromise}
+
+Running GRE inside an IPSec tunnel is the standard workaround
+for a real limitation: IPSec cannot carry multicast traffic
+or routing protocol updates natively, but many enterprise WAN
+designs depend on OSPF or EIGRP adjacencies. GRE-over-IPSec
+combines GRE's routing flexibility with IPSec's encryption.
+Fahriza et al.~\cite{fahriza2026} evaluate this in a three-branch
+deployment and find it operationally sound with reasonable QoS
+outcomes. Kumar et al.~\cite{kumar2020} specifically examine
+multicast transport through GRE before IPSec encryption.
+
+The cost is header overhead: at minimum 4 bytes of GRE plus
+28 bytes of ESP overhead per packet, which reduces effective
+MTU and adds CPU load. For throughput-sensitive paths this
+matters and needs to be factored into capacity planning.
+The quantum vulnerability of the underlying IPSec key exchange
+carries over completely.
+
+\subsection{MPLS L3VPN: Carrier-Grade Isolation}
+
+MPLS (RFC~3031~\cite{rfc3031}) routes packets based on
+short labels rather than full IP lookups, enabling the
+provider to build logically isolated VPNs over shared physical
+infrastructure. The L3VPN variant (RFC~4364~\cite{rfc4364})
+uses per-customer VRF tables on Provider Edge routers and
+MP-BGP to distribute routing information between them. Route
+Distinguishers make overlapping customer address spaces
+globally unique, and Route Targets control which routes cross
+VPN boundaries. Mungse~\cite{mungse2023} gives a detailed
+treatment of VRF operation. Fayed et al.~\cite{fayed2024}
+validate three progressively complex L3VPN models in GNS3,
+including an overlapping VPN and a central services
+architecture where a shared server farm is reachable from
+multiple customer VRFs through controlled route leaking.
+
+MPLS has genuine strengths: native QoS through EXP bits in
+the label header, traffic engineering via RSVP-TE, and a
+core that stays clean regardless of how many customers
+you add. The central services model Fayed et al.\ demonstrate
+is difficult to replicate with GRE or IPSec at comparable
+scale.
+
+However, MPLS does not encrypt anything. The isolation is
+logical, not cryptographic. Traffic traversing shared provider
+infrastructure is readable by anyone with access to that
+infrastructure. For organizations with regulatory requirements
+for data-in-transit encryption, MPLS must be combined with
+an IPSec overlay --- which then inherits IPSec's quantum
+vulnerability. The dependence on provider infrastructure also
+means MPLS cannot extend natively into public cloud
+environments.
+
+\subsection{SD-WAN: Operational Flexibility, Evolving Security}
+
+SD-WAN decouples WAN control from the underlying transport,
+allowing a central controller to aggregate multiple link types
+--- MPLS circuits, broadband Internet, LTE --- and route traffic
+dynamically based on application requirements and real-time
+link quality~\cite{tahenni2024}. The market has grown rapidly
+for a straightforward reason: it substantially reduces WAN costs
+compared to all-MPLS designs while providing acceptable
+performance for most traffic, projected at a CAGR of 10.72\%
+through 2031~\cite{fortinet_sdwan}.
+
+Tahenni and Merazka~\cite{tahenni2024} find that MPLS still
+wins on deterministic latency for mission-critical real-time
+traffic, which is why the dominant enterprise pattern is
+hybrid: SD-WAN augmenting MPLS rather than replacing it
+outright. SD-WAN also resolves the $O(N^2)$ tunnel scaling
+problem of manually configured IPSec: the controller provisions
+tunnels automatically, and WireGuard is increasingly adopted
+as the encryption underlay. The security concern is the
+controller itself, which concentrates the attack surface for
+the entire WAN overlay into a single logical component.
+
+\subsection{ZTNA: The Right Idea, Incomplete Alone}
+
+ZTNA applies the zero trust model~\cite{nist800207} to access
+control: no implicit trust after authentication, no broad
+network reachability, access granted only to the specific
+application the user is requesting right now. The NIST
+SP~800-207 framework organizes this around three components ---
+Policy Engine (PE), Policy Administrator (PA), and Policy
+Enforcement Point (PEP) --- that together ensure a resource
+remains invisible to anyone who has not been explicitly granted
+access to it in the current session.
+
+The case for ZTNA is empirically strong. Gartner projected
+that 70\% of new remote-access deployments by 2025 would be
+ZTNA-based~\cite{gartner2023}, and the 56\% enterprise VPN
+breach rate in 2024~\cite{cybersec2024} explains why organizations
+are moving in that direction. Eliminating lateral movement
+structurally --- by making it impossible for a compromised
+credential to reach anything beyond its authorized application
+--- is a more complete solution to the post-authentication
+trust problem than any amount of network segmentation.
+
+But ZTNA is not a complete answer. It does not provide
+site-to-site WAN transport. Its key exchange is typically
+classical and therefore quantum-vulnerable. And it shifts the
+attack surface to the identity provider: compromise the IdP
+and you may compromise everything. We do not raise these points
+to dismiss ZTNA but to identify precisely where the gaps are
+that a more complete architecture needs to fill.
+
+% ---------------------------------------------------------------
+\section{Where Things Actually Stand: Gap Analysis}
+\label{sec:threatscape}
+
+\subsection{Threat Surface Taxonomy}
+
+Table~\ref{tab:threats} maps the primary threat vectors for
+each technology across three categories: passive threats
+(interception without modification), active threats (injection,
+impersonation, disruption), and quantum threats (attacks that
+become feasible with a cryptographically relevant quantum
+computer).
+
+\begin{table}[htbp]
+\caption{Threat Surface Taxonomy by Technology}
+\label{tab:threats}
+\centering
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{p{1.3cm}p{6.2cm}}
+\toprule
+\textbf{Technology} & \textbf{Primary Threat Vectors} \\
+\midrule
+GRE & Passive: full payload interception. Active: packet injection, endpoint spoofing. Quantum: N/A (no cryptography to attack). \\
+\midrule
+IPSec & Active: IKEv1 downgrade~\cite{sankaran2023}, cipher negotiation exploitation, SA exhaustion DoS, PSK theft. Quantum: HNDL against DH/ECDH key exchange. \\
+\midrule
+WireGuard & Smallest overall attack surface; no downgrade possible. Active: roaming endpoint impersonation (requires stolen private key). Quantum: HNDL against Curve25519. \\
+\midrule
+MPLS L3VPN & Active: label spoofing (requires provider infrastructure access), provider insider threat. Passive: unencrypted payload interception on shared provider infrastructure. \\
+\midrule
+SD-WAN & Active: controller plane compromise, edge device impersonation. Quantum: HNDL against IPSec/WireGuard underlay key exchanges. \\
+\midrule
+ZTNA & Active: IdP compromise, device posture bypass, OAuth token theft, cloud broker availability (DoS). Quantum: HNDL if PQC not integrated into handshake. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{The Lateral Movement Problem}
+
+This is worth stating plainly. In GRE, IPSec, WireGuard, and
+MPLS deployments, a successfully authenticated user gets
+IP-level reachability to a network segment, not to a specific
+application. The tunnel is the access control. If the device
+is later compromised, or if the credentials were stolen and
+replayed from a different machine, the attacker has the same
+access the legitimate user had. This is how ransomware operators
+escalate from a phished credential to a domain controller.
+It is not a configuration error; it is a consequence of how
+these protocols were designed~\cite{cybersec2024,tanveer2023}.
+
+ZTNA solves this through application-granular enforcement,
+but only for user-to-application remote access. Site-to-site
+connectivity, which still makes up a large fraction of
+enterprise WAN traffic, does not have a ZTNA equivalent.
+
+\subsection{The Quantum Horizon}
+
+Two distinct quantum threats apply to VPN cryptography, and
+they require different responses. Shor's algorithm solves the
+discrete logarithm and integer factorization problems that
+underlie RSA, Diffie-Hellman, and ECC in polynomial time,
+rendering classical key exchange transparent~\cite{nist_fips203}.
+Grover's algorithm provides a quadratic speedup for symmetric
+key search, which effectively halves symmetric key security:
+AES-128 drops to 64 effective bits under quantum attack,
+making AES-256 the practical minimum going forward.
+
+NIST finalized FIPS-203~\cite{nist_fips203} in August 2024,
+standardizing the Module-Lattice Key Encapsulation Mechanism
+(ML-KEM, formerly CRYSTALS-Kyber) for key encapsulation. ML-KEM
+is grounded in the hardness of the Learning With Errors (LWE)
+problem over module lattices, which is believed to remain
+intractable for quantum computers. RFC~9370~\cite{rfc9370}
+provides the IKEv2 protocol mechanism for running multiple key
+exchanges within a single negotiation, giving IPSec deployments
+a concrete migration path to hybrid PQC without abandoning
+the existing protocol.
+
+\subsection{Quantitative Performance Summary}
+
+Table~\ref{tab:perf} synthesizes benchmark data from recent
+empirical studies~\cite{zhuque2026,zenarmor2023,tahenni2024}.
+These figures apply to software-based implementations on
+general-purpose hardware without hardware crypto acceleration.
+On machines with AES-NI, IPSec with AES-GCM can narrow the
+throughput gap with WireGuard substantially.
+
+\begin{table}[htbp]
+\caption{Performance Benchmarks, Software Implementations}
+\label{tab:perf}
+\centering
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Protocol} & \textbf{Throughput} & \textbf{Latency} & \textbf{CPU} \\
+                  & (\% of native) & overhead (ms) & overhead \\
+\midrule
+WireGuard         & 92--95\%  & 1--3    & Low \\
+IKEv2/IPSec       & 85--90\%  & 10--15  & Medium \\
+OpenVPN           & 70--80\%  & 15--25  & High \\
+GRE (unencrypted) & $\sim$99\%& $<$1    & Minimal \\
+GRE over IPSec    & 83--88\%  & 11--16  & Medium \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ---------------------------------------------------------------
+\section{Proposed Framework: The QRA-ZTA}
+\label{sec:framework}
+
+The gap analysis in Section~\ref{sec:threatscape} leads to a
+fairly specific architectural requirement. An enterprise access
+architecture that addresses the current threat landscape needs
+to do at least four things that no single existing technology
+does: replace classical key exchange with quantum-resistant
+equivalents, enforce application-granular access control with
+continuous re-verification, process policy at kernel speed
+without becoming a performance bottleneck, and detect threats
+inside encrypted tunnels without decrypting them. The
+Quantum-Resilient Adaptive Zero Trust Architecture (QRA-ZTA)
+is our attempt to specify how those requirements can be met
+together, in a way that organizations can layer atop their
+existing infrastructure incrementally.
+
+The framework has four strata. Fig.~\ref{fig:qrazta} shows
+how they relate.
+
+\begin{figure}[htbp]
+\centering
+\begin{tabular}{|c|}
+\hline
+\textbf{Stratum IV: Intelligence Layer} \\
+AI Anomaly Detection on Encrypted Traffic Metadata \\
+(eBPF Flow Statistics $\rightarrow$ Autoencoder/LSTM Engine) \\
+\hline
+\textbf{Stratum III: Identity and Trust Layer} \\
+ZTNA Policy Engine / Policy Administrator / PEP \\
+Continuous Verification, Least-Privilege Access \\
+\hline
+\textbf{Stratum II: Programmable Data Plane} \\
+eBPF/XDP Kernel-Space Policy Enforcement \\
+AES-256-GCM Symmetric Datapath (PQC-derived keys) \\
+\hline
+\textbf{Stratum I: Cryptographic Foundation} \\
+Hybrid PQC Handshake: X25519 + ML-KEM (FIPS-203) \\
+User-Space Key Establishment Daemon \\
+\hline
+\textbf{Transport Substrate (Existing Infrastructure)} \\
+GRE / IPSec / WireGuard / MPLS / SD-WAN \\
+\hline
+\end{tabular}
+\caption{The QRA-ZTA layer model. Each stratum addresses a
+distinct threat class while interfacing with the transport
+substrate organizations already operate.}
+\label{fig:qrazta}
+\end{figure}
+
+\subsection{Stratum I: Hybrid Post-Quantum Key Exchange}
+
+The quantum vulnerability of classical VPN key exchange cannot
+be patched; it has to be replaced. Our approach is the hybrid
+model standardized in RFC~9370~\cite{rfc9370}, which runs a
+classical key exchange (X25519 or ECDH-P256) and an ML-KEM
+encapsulation in the same handshake, deriving a shared secret
+from both. The resulting session key is quantum-safe if either
+component holds: if ML-KEM's lattice foundations are later
+found to have an unexpected weakness, the classical component
+still protects against classical adversaries. If a quantum
+computer cracks X25519, the ML-KEM component makes the
+captured ciphertext useless to an HNDL attacker.
+
+This is not a hypothetical deployment model. Cloudflare has
+run X25519+Kyber-768 hybrid in production TLS~1.3 across
+its network~\cite{cloudflare_pqc}. Enterprise firewall vendors
+have begun integrating ML-KEM into IKEv2 negotiation. The
+mechanism exists and is being deployed; what we are proposing
+is applying it systematically as the cryptographic foundation
+of an integrated access architecture.
+
+One practical constraint worth noting: ML-KEM public keys are
+1,184 bytes for ML-KEM-768, compared to 32 bytes for Curve25519.
+This increases handshake size meaningfully and can cause
+fragmentation or timeout issues with middleboxes that
+aggressively limit packet sizes. The computationally intensive
+handshake is handled by a dedicated user-space daemon rather
+than being run in kernel space, precisely because the instruction
+count and complexity would exceed what in-kernel environments
+can safely execute. Once the shared secret is established and
+the symmetric AES-256-GCM session keys derived, those keys are
+pushed down into the data-plane component described next.
+
+\subsection{Stratum II: eBPF-Based Data Plane Enforcement}
+
+Traditional Linux packet processing traverses the full TCP/IP
+stack. For each packet this means context switches, sequential
+iptables rule evaluation, and routing table lookups. At
+enterprise traffic volumes, this overhead is measurable and
+real. eBPF changes the model fundamentally: sandboxed programs
+run directly within the kernel, attached to the eXpress Data
+Path (XDP) hook at the NIC driver level, processing packets
+before they reach the standard network stack~\cite{ebpf_networking}.
+
+In the QRA-ZTA data plane, the session keys from Stratum I
+are stored in eBPF Maps --- efficient in-kernel key-value
+structures accessible by both user-space daemons and eBPF
+programs. XDP-attached programs consult these maps to decrypt
+incoming packets and enforce per-flow forwarding rules derived
+from the access policies in Stratum III. The entire operation
+bypasses iptables. The performance gains are significant:
+eBPF-based networking has been shown to achieve packet
+forwarding throughput comparable to dedicated hardware, with
+latency reductions of an order of magnitude versus
+iptables-based approaches~\cite{ebpf_networking}.
+
+There is a security benefit beyond performance. The kernel
+verifier statically analyzes every eBPF program before
+execution, confirming it terminates, does not loop, and
+maintains strict memory safety. No eBPF program can destabilize
+the kernel host --- a property loadable kernel modules do not
+share. This makes the data plane a safer place to enforce
+security policy than a loadable module would be.
+
+\subsection{Stratum III: Continuous Zero Trust Verification}
+
+The zero trust model defined in NIST SP~800-207~\cite{nist800207}
+is built on three components: the Policy Engine (PE), which
+evaluates access requests; the Policy Administrator (PA), which
+issues session tokens based on the PE's decisions; and the
+Policy Enforcement Point (PEP), which gates data-plane access.
+In QRA-ZTA, the PEP is the eBPF program in Stratum II. The PE
+evaluates a composite trust score for each session request,
+drawing on user identity (certificate or external IdP), device
+posture (patch level, EDR agent status), contextual signals
+(geography, time, access history), and threat intelligence.
+The PA translates the PE's verdict into short-lived session
+tokens and updates the eBPF Maps with per-flow forwarding
+rules scoped to the specific application endpoint, not to a
+network segment.
+
+The critical difference from a conventional VPN is what happens
+after the session is established. QRA-ZTA does not grant
+ongoing implicit trust. Tokens expire on a schedule, requiring
+periodic re-evaluation by the PE. More usefully, the anomaly
+detection output from Stratum IV feeds directly into the PE:
+a behavioral anomaly can trigger an immediate trust score
+downgrade, prompting re-authentication or, for high-confidence
+threat signals, immediate session revocation. The enforcement
+is at the eBPF level, so revocation happens in the kernel fast
+path with no application-layer round trip.
+
+This design eliminates lateral movement structurally. A
+compromised credential in a QRA-ZTA deployment grants access
+to the specific application that credential was authorized
+to reach, in the current session, not to the network segment
+that application lives in. There is no path from a single
+credential compromise to a domain-wide breach without
+separately compromising additional credentials and passing
+continuous behavioral analysis.
+
+\subsection{Stratum IV: AI Anomaly Detection on Encrypted Traffic}
+
+End-to-end encryption is a security benefit with an operational
+cost: it blinds the traditional intrusion detection tools that
+depend on reading packet payloads. Deep packet inspection does
+not work on properly encrypted traffic, and attempting to
+break encryption at a middlebox for inspection purposes
+undermines the end-to-end security model and creates new
+exposure points~\cite{ai_anomaly_det}. This is a genuine
+tension, and it is one that adversaries have learned to
+exploit --- encrypted C2 channels and exfiltration over HTTPS
+are routine precisely because they evade payload-based
+detection.
+
+The response in QRA-ZTA is to shift from payload analysis to
+behavioral analysis. Encrypted traffic has observable
+characteristics that do not require reading the payload:
+packet lengths, inter-arrival timing, flow duration, byte
+volume distributions, and burst patterns all differ in
+meaningful ways across different traffic types. A ransomware
+beacon, a file exfiltration stream, and a video call have
+very different behavioral profiles even when all three are
+encrypted with AES-256.
+
+eBPF programs in the data plane continuously compute these
+statistics in kernel space, without copying payload data to
+user space. The low overhead of this approach is the key
+enabler: traditional packet capture tools like libpcap introduce
+unacceptable performance penalties at enterprise traffic
+volumes, but eBPF runs in the kernel fast path with negligible
+impact. Aggregated statistics are pushed to a user-space AI
+engine via ring buffers. The engine runs an ensemble: supervised
+classifiers (Random Forest or XGBoost) handle high-confidence
+classification of known threat patterns, while unsupervised
+autoencoders and LSTM networks model per-user, per-application
+behavioral baselines and flag deviations that do not match
+any known signature~\cite{ai_anomaly_det}.
+
+The DeSFAM framework~\cite{desfam}, which correlates eBPF
+network telemetry with host-level system call traces, shows
+what this approach can achieve: 96\% detection accuracy and
+an F1-score of 0.92 for container-level threats, without
+payload inspection. When QRA-ZTA's intelligence layer flags
+an anomaly, the signal goes to the Stratum III Policy Engine,
+which can downgrade the session trust score and trigger
+re-verification. The loop is closed: telemetry drives
+policy, policy drives enforcement, enforcement is in the
+kernel fast path.
+
+\subsection{How QRA-ZTA Layers onto Existing Infrastructure}
+
+We want to be direct about what this framework is and what it
+is not. It is not a proposal to rip out existing GRE, IPSec,
+MPLS, or SD-WAN infrastructure and replace it. That is
+operationally unrealistic for most enterprises, and it is
+not necessary to realize the security benefits the framework
+provides.
+
+The framework is designed to be applied incrementally. An
+organization running IKEv2/IPSec today can upgrade to hybrid
+PQC key exchange using RFC~9370~\cite{rfc9370} without changing
+anything else, addressing the HNDL threat against recorded
+traffic immediately. The eBPF data plane can be introduced
+alongside existing iptables configurations as an acceleration
+layer for high-priority traffic. ZTNA policy enforcement in
+Stratum III can be applied to the highest-value applications
+first --- financial systems, HR databases, administrative
+interfaces --- while GRE/IPSec/MPLS continues to handle
+lower-priority traffic.
+
+For MPLS deployments where payload encryption is absent,
+Stratum I hybrid PQC key exchange applied as an IPSec overlay
+addresses both the plaintext exposure and the quantum threat
+in a single step. SD-WAN deployments benefit from Stratum I
+applied to the existing WireGuard or IPSec underlay, with
+Stratum IV anomaly detection applied to the controller's
+telemetry stream. WireGuard deployments are the most
+straightforward: the symmetric key infrastructure is already
+in place, and only the key exchange requires upgrading once
+a standardized WireGuard PQC extension becomes
+available~\cite{hu2020pq}.
+
+% ---------------------------------------------------------------
+\section{Cross-Technology Comparative Analysis}
+\label{sec:discussion}
+
+Table~\ref{tab:comparison} extends the comparison across the
+six technologies with the dimensions that the gap analysis in
+Section~\ref{sec:threatscape} identified as most consequential.
+The lateral movement and quantum resistance rows are not found
+in prior comparative surveys of enterprise VPN; we add them
+here because they are the two threat dimensions that most
+clearly differentiate the current security requirements from
+those of a decade ago.
+
+\begin{table*}[htbp]
+\caption{Extended Comparative Summary Including Security-Critical Dimensions}
+\label{tab:comparison}
+\centering
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Criterion} & \textbf{GRE} & \textbf{IPSec} & \textbf{WireGuard}
+  & \textbf{MPLS L3VPN} & \textbf{SD-WAN} & \textbf{ZTNA} \\
+\midrule
+Encryption          & None      & Strong    & Strong      & None$^{a}$    & Configurable & Strong \\
+Initial auth.       & None      & Strong    & Strong      & Implicit      & Strong       & Strong \\
+Continuous auth.    & No        & No        & No          & No            & No           & Yes \\
+Lateral movement    & High      & High      & High        & High          & High         & Eliminated \\
+Quantum-resistant   & No        & No$^{b}$  & No$^{b}$    & N/A           & No$^{b}$     & No$^{b}$ \\
+Routing support     & Full      & Limited   & Limited     & Full (BGP)    & Full         & N/A \\
+Native QoS          & No        & No        & No          & Yes           & Dynamic      & N/A \\
+Scalability         & Low       & Low       & Medium      & High          & High         & High \\
+Config. complexity  & Low       & Medium    & Low         & High          & Low          & Medium \\
+Cloud readiness     & Medium    & Medium    & High        & Low           & Native       & Native \\
+Throughput          & $\sim$99\%& 85--90\%  & 92--95\%    & N/A           & Variable     & N/A \\
+Latency overhead    & $<$1~ms   & 10--15~ms & 1--3~ms     & Deterministic & Dynamic      & Per-session \\
+\bottomrule
+\multicolumn{7}{l}{\small $^{a}$MPLS provides logical isolation, not cryptographic encryption.} \\
+\multicolumn{7}{l}{\small $^{b}$Hybrid PQC deployable via RFC~9370~\cite{rfc9370} for IPSec, WireGuard, SD-WAN underlays.} \\
+\end{tabular}
+\end{table*}
+
+Reading across the lateral movement and quantum resistance rows
+makes the architectural gap visible. No existing technology
+handles both. ZTNA eliminates lateral movement but is
+quantum-vulnerable. IPSec and WireGuard can be made
+quantum-resistant through hybrid key exchange but do nothing
+about post-authentication lateral movement. This is precisely
+the gap QRA-ZTA addresses by combining Stratum I PQC key
+exchange with Stratum III zero trust enforcement.
+
+\subsection{Practical Selection Guidance}
+
+For organizations that need to make technology decisions now,
+the analysis supports the following guidance.
+
+Security-first organizations --- financial institutions, healthcare,
+defense contractors --- should apply RFC~9370 hybrid PQC key
+exchange to existing IPSec site-to-site tunnels immediately.
+The HNDL threat is active today, and recorded traffic cannot
+be retroactively protected after a quantum computer becomes
+available. For user-to-application access, ZTNA should replace
+remote-access VPN for all privileged and sensitive resource access.
+
+Performance-critical organizations should retain MPLS for
+real-time, latency-sensitive traffic where its deterministic
+QoS properties are genuinely required. WireGuard is the right
+choice for all other site-to-site connectivity, offering the
+best software-implementation performance by a meaningful margin.
+
+Cost-constrained organizations --- smaller enterprises and
+public sector --- should prioritize two things: replacing
+unencrypted GRE tunnels with WireGuard (at zero additional
+license cost) and migrating remote access to ZTNA, which
+scales more predictably than VPN concentrators.
+
+Compliance-driven organizations face a more nuanced situation.
+IPSec with IKEv2 and NIST-approved cipher suites remains the
+most established option for regulatory frameworks that specify
+allowed algorithms. However, those frameworks are beginning
+to address PQC migration requirements, and early adoption of
+RFC~9370 hybrid key exchange positions an organization ahead
+of the curve rather than in a reactive posture.
+
+% ---------------------------------------------------------------
+\section{Future Work}
+
+Three directions seem most consequential for this space.
+
+The most pressing is a standardized post-quantum extension for
+WireGuard. The Noise handshake protocol that WireGuard uses
+does not currently have a standardized PQC variant analogous
+to RFC~9370 for IKEv2. Hu's 2020 prototype~\cite{hu2020pq}
+demonstrated that hybrid PQC integration with WireGuard is
+feasible with moderate overhead, but a standardized extension
+is needed before enterprise deployments can rely on it.
+
+A second important direction is formal verification of ZTNA
+policy engines. The security of zero trust architectures
+depends entirely on the correctness of the policy language
+and its enforcement. Misconfiguration is a real risk that is
+difficult to detect without formal methods --- a policy that
+appears correct can silently grant more access than intended.
+Model-checking approaches applied to ZTA policy languages
+would provide assurance that current tooling cannot.
+
+Third, post-quantum zero-knowledge proofs for authentication
+represent an important gap at the intersection of privacy and
+quantum resistance. Current ZKP schemes used in privacy-preserving
+authentication depend on elliptic curve pairings that are
+vulnerable to Shor's algorithm. Hash-based alternatives like
+STARKs and lattice-based ZKPs offer post-quantum properties
+but need further development and standardization before they
+can replace current schemes at enterprise scale.
 
 % ---------------------------------------------------------------
 \section{Conclusion}
 \label{sec:conclusion}
 
-This paper reviewed three foundational enterprise VPN technologies
---- GRE, IPSec, and MPLS --- from the perspective of their technical
-operation, security properties, and practical deployment
-characteristics. The review covered tunnel-based approaches
-including standalone GRE, IPSec in tunnel mode, and the widely
-deployed combination of GRE-over-IPSec, as well as provider-managed
-MPLS VPNs including both Layer-2 and Layer-3 variants with complex
-deployment models.
+Enterprise VPN security is not failing because the underlying
+protocols were badly designed. GRE, IPSec, and MPLS were
+designed for the threat environment of the 1990s and early
+2000s, and they work as specified. The problem is that the
+threat environment has changed in ways those specifications
+did not anticipate: adversaries who collect encrypted traffic
+for future quantum decryption, and attackers who exploit the
+implicit post-authentication trust that every perimeter-based
+VPN extends to connected devices.
 
-Several conclusions emerge from this survey. First, GRE should
-never be deployed alone in environments where data confidentiality
-is required. Its value lies in routing flexibility, and it is best
-used as an inner tunnel encapsulated within IPSec. Second, IPSec
-remains the gold standard for encrypting VPN traffic, and IKEv2
-with modern cipher suites such as AES-256 and SHA-256 should be
-the mandatory configuration in any new deployment. Third, MPLS
-L3VPNs offer capabilities in scalability, QoS, and flexible
-connectivity that GRE and IPSec simply cannot match. For large
-enterprise and service provider environments, MPLS with
-BGP-based L3VPN remains the most powerful solution available.
+This paper addressed both gaps in sequence. The comparative
+survey in Sections~\ref{sec:relatedwork}--\ref{sec:threatscape}
+characterized the current state of six enterprise connectivity
+technologies and made explicit the threat dimensions most
+relevant to 2024--2026: lateral movement risk, quantum key
+vulnerability, and performance overhead. The QRA-ZTA framework
+in Section~\ref{sec:framework} proposed a response: hybrid
+PQC key exchange per NIST FIPS-203 and RFC~9370 at the
+cryptographic layer, eBPF/XDP enforcement in the data plane,
+NIST SP~800-207 zero trust verification in the trust layer,
+and AI-driven behavioral anomaly detection in the intelligence
+layer. Each stratum targets a distinct gap, and together they
+can be layered incrementally onto existing enterprise
+infrastructure.
 
-Future work should examine the convergence of traditional VPN
-technologies with Software-Defined Networking (SDN) and
-cloud-native architectures. As enterprises increasingly move
-workloads to the cloud, the boundaries between GRE, IPSec, MPLS,
-and cloud-native VPN solutions are blurring, and new hybrid
-architectures are emerging that combine elements of all three.
+The core argument is that organizations do not have to choose
+between protecting against quantum threats and protecting
+against lateral movement. QRA-ZTA shows that both can be
+addressed together, using mechanisms that are either
+standardized today or close to standardization, in a way
+that respects the operational constraints of enterprises that
+have built significant infrastructure around the technologies
+surveyed here.
 
-% ---------------------------------------------------------------
 \bibliographystyle{IEEEtran}
-\bibliography{references}
+\bibliography{references_final}
 
 \end{document}
