@@ -1,0 +1,82 @@
+\documentclass[conference]{IEEEtran}
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+
+\begin{document}
+
+\title{Enterprise Virtual Private Networks: A Comparative Report on GRE, IPsec, and MPLS Combinations}
+
+\author{\IEEEauthorblockN{1\textsuperscript{st} Author Name}
+\IEEEauthorblockA{\textit{Department Name} \\
+\textit{Organization}\\
+City, Country \\
+email address}
+}
+
+\maketitle
+
+\begin{abstract}
+As enterprise informatization grows, organizations require secure, cost-effective, and scalable methods to exchange data across multiple branches. Virtual Private Networks (VPNs) provide logical, encrypted tunnels over public or shared networks to achieve this. This report analyzes the combinations of Generic Routing Encapsulation (GRE), Internet Protocol Security (IPsec), and Multiprotocol Label Switching (MPLS) used by modern enterprises. It details the organizational use cases, advantages, and disadvantages of these implementations based on current network engineering literature.
+\end{abstract}
+
+\begin{IEEEkeywords}
+VPN, IPsec, GRE, MPLS, Enterprise Networking, Security
+\end{IEEEkeywords}
+
+\section{Introduction}
+Enterprise informatization is essential for large organizations with multiple divisions or branches, requiring secure information exchange [1]. While the public Internet is cheap, it lacks inherent security; conversely, leased physical lines are secure but prohibitively expensive [1]. VPN technology solves this by creating secure "encrypted tunnels" through public networks [2]. VPNs rely on tunneling protocols to encapsulate data and security protocols to encrypt it [3]. This report examines the specific combinations of GRE, IPsec, and MPLS to determine their optimal enterprise use cases.
+
+\section{GRE Over IPsec VPN}
+
+\subsection{Organizational Use Case}
+\textbf{GRE over IPsec is typically used by cost-conscious enterprises that need to securely connect a headquarters to remote branch offices over the public Internet.} For example, a company with a head office in Beijing and a branch in Shanghai can use GRE over IPsec to enable internal IP addresses to communicate securely across the public web [4, 5]. Furthermore, organizations transitioning their infrastructure to future-proof protocols utilize GRE tunneling for IPv6 over IPv4 [6]. 
+
+Organizations combine GRE and IPsec because IPsec alone does not support the encryption of multicast and broadcast packets, which are necessary for dynamic routing protocols like OSPF and RIP [7-9]. GRE is used to encapsulate these multicast/broadcast packets into unicast packets, and IPsec is then applied to encrypt the GRE tunnel, ensuring both seamless routing and robust data security [7].
+
+\subsection{Advantages}
+\begin{itemize}
+    \item \textbf{Economic and Flexible:} Utilizing the Internet as a transmission backbone eliminates the need for expensive fixed-line rents, making it highly cost-effective regardless of the distance between branches [10]. It is flexible enough to connect via varying speeds (10M, 100M, or cheap DSL) and can connect thousands of branches globally [11].
+    \item \textbf{High Security:} IPsec provides a suite of security services at the network layer, including data integrity, data source identification, and prevention of retransmission [12]. It utilizes robust encryption algorithms like AES and 3DES, often in a mixed algorithm approach with Elliptic Curve Cryptography (ECC) [3, 13].
+    \item \textbf{Redundancy and Routing Support:} GRE allows for the support of complex routing protocols (OSPF, RIP) within the encrypted tunnel, making network address management convenient and supporting dynamic failover and load balancing [8, 9, 14].
+\end{itemize}
+
+\subsection{Disadvantages}
+\begin{itemize}
+    \item \textbf{Reduced Quality of Service (QoS):} IPsec modifies data in the IP and transmission headers, and the encryption/decryption overhead can lead to network latency and congestion [15, 16]. Step-by-step IP data transmission means QoS cannot be strictly guaranteed [17].
+    \item \textbf{Client Configuration:} IPsec often requires the installation and maintenance of specific client software, which can suffer from compatibility issues across different manufacturers [16, 18].
+\end{itemize}
+
+\section{MPLS VPN}
+
+\subsection{Organizational Use Case}
+\textbf{MPLS VPNs are predominantly utilized by telecom operators and large enterprises that require predictable, high-speed performance across two or more Local Area Networks (LANs).} MPLS operates using a combination of Layer 2 switching and Layer 3 routing technologies, simplifying core router functions by utilizing label switching [19]. Organizations choose MPLS when they trust their network operator to manage the routing and isolate traffic securely without needing end-to-end encryption [20]. 
+
+If an organization's MPLS VPN data must pass across multiple untrusted carriers' backbones, they may combine MPLS with IPsec to add a high-level security mechanism on top of the MPLS routing [20].
+
+\subsection{Advantages}
+\begin{itemize}
+    \item \textbf{Superior Quality of Service (QoS):} Because MPLS implements high-speed switching in the backbone network, it excels at service classification and traffic engineering, providing perfect, predictable performance [15, 18, 19].
+    \item \textbf{Excellent Scalability:} MPLS networks can be easily configured into full mesh topologies by service providers [21]. When a new site is added, simple arrangements are made between the Customer Premise Equipment (CPE) and the ISP, allowing the enterprise to scale without complex reconfigurations [21, 22].
+    \item \textbf{Convenience and Maintainability:} Users on different LANs appear to be on the same network without requiring any client software installation [16]. The enterprise only needs to maintain the CE (Customer Edge) router, leaving the rest to the provider [23, 24].
+\end{itemize}
+
+\subsection{Disadvantages}
+\begin{itemize}
+    \item \textbf{Lack of Inherent Encryption:} MPLS achieves security through route isolation and address hiding rather than cryptographic encryption [25, 26]. Because data is transmitted in plain text, it poses a security risk if the operator's network is breached [17, 25].
+    \item \textbf{High Cost:} While cheaper than dedicated physical lines, MPLS VPNs require monthly access rents that make them the least cost-efficient option compared to Internet-based IPsec or SSL VPNs [22, 23].
+\end{itemize}
+
+\section{Conclusion}
+The choice of VPN architecture depends heavily on an organization's priorities regarding security, speed, and budget. Enterprises that prioritize strict data confidentiality and low infrastructure costs should implement a \textbf{GRE over IPsec combination}, leveraging the public Internet while overcoming IPsec's routing limitations [7, 10]. Conversely, enterprises that require guaranteed Quality of Service, high-speed switching, and easy scalability across multiple LANs—and have the budget to support it—should opt for \textbf{MPLS VPNs} [15, 21, 23]. For maximum security over an MPLS network, especially when crossing untrusted backbones, IPsec can be layered over the MPLS infrastructure [20].
+
+\begin{thebibliography}{00}
+\bibitem{b1} C. Wang and J. Chen, "Implementation of GRE Over IPsec VPN Enterprise Network Based on Cisco Packet Tracer," Hainan College of Software Technology, 2014.
+\bibitem{b2} M. I. Fahriza, R. Munadi, and H. M. Jumhur, "Development of GRE IPSec for Enhancing Private Network Scalability: Performance, Cost, and Regulatory Framework," Eduvest – Journal of Universal Studies, vol. 6, no. 1, Jan. 2026.
+\bibitem{b3} Z. Zhipeng, S. Chandel, S. Jingyao, Y. Shilin, Y. Yunnan, and Z. Jingji, "VPN: a Boon or Trap? A Comparative Study of MPLS, IPSec, and SSL Virtual Private Networks," New York Institute of Technology, Nanjing, China.
+\end{thebibliography}
+
+\end{document}
